@@ -1,17 +1,15 @@
-from ast import While
-from cgitb import text
-from operator import truediv
-from unicodedata import name
+import time
+import requests
+from tkinter import Tk, BOTH, Label
+
 from musixmatch import Musixmatch
 from lyricsgenius import Genius
 from pprint import pprint
-import requests
-import json
-import time
-from tkinter import *
-from tkinter import ttk
 from googletrans import Translator
-from time import sleep
+
+from track import Track
+from tokens import SPOTIFY_ACCESS_TOKEN, GENIUS_TOKEN
+
 #OBVIOUSLY dont try to use this for the under:night ost THIS WILL NOT WORK there is no artist out there name "ratio"
 #this is a very specific to me problem
 #if you want all the lyrics you can like go through musixmatches process
@@ -19,11 +17,11 @@ from time import sleep
 #if you get an error around lines 204-213 then the song you are playing does not have lyrics
 #i think you have to reset the token every day
 #https://www.youtube.com/watch?v=l4WOgef0pDU&list=PL0MxHK9qnVo4koZLFrOsNuEEZixV1_JAu&index=2 Thanks
-root = Tk()
-#YOUR TOKEN GOES HERE     \/
-SPOTIFY_ACCESS_TOKEN = ('Use your own')
-genius = Genius("Use your own") #THIS IS NEEDED FOR GENIUS THOUGH, AND USE YOUR OWN API KEY STOP USING MINE
+
 SPOTIFY_GET_CURRENT_TRACK_URL = 'https://api.spotify.com/v1/me/player/currently-playing'
+
+root = Tk()
+genius = Genius(GENIUS_TOKEN) #THIS IS NEEDED FOR GENIUS THOUGH, AND USE YOUR OWN API KEY STOP USING MINE
 musixmatch = Musixmatch('<Use your own>') #this is not needed for genius
 translator = Translator()
 
@@ -39,6 +37,8 @@ base_url = "https://api.musixmatch.com/ws/1.1/"
 api_key = "&apikey=:)"
 
 # api methods
+
+# This all should be reworked
 a1 = lyrics_matcher = "matcher.lyrics.get"
 a2 = lyrics_track_matcher = "track.lyrics.get"
 a3 = track_matcher = "matcher.track.get"
@@ -136,132 +136,121 @@ def get_parameters(choice):
 #https://www.youtube.com/watch?v=yKz38ThJWqE Thanks bro
 
 
-def get_current_track(access_token):
+def get_current_track():
     response = requests.get(
         SPOTIFY_GET_CURRENT_TRACK_URL,
-        headers= {
-            "Authorization": f"Bearer {access_token}"
+        headers={
+            "Authorization": f"Bearer {SPOTIFY_ACCESS_TOKEN}"
         }
     )
-    resp_json = response.json()
+    song_data = response.json()["item"]
+    return Track(**song_data)
 
-    global artists_names
-    global track_name
-
-    track_id = resp_json['item']['id']
-    track_name = resp_json['item']['name']
-    artists = [artist for artist in resp_json['item']['artists']]
-
-    link = resp_json['item']['external_urls']['spotify']
-
-    artists_names = ', '.join([artist['name'] for artist in artists])
-
-    global tpt
-    global namept
-    tpt = track_name
-    namept = artists_names
-
-    current_track_info = {
-        "id": track_id,
-        "name": track_name,
-        "artists": artists_names,
-        "link": link
-    }
-
-
-
-    return current_track_info
+#
+#    global artists_names
+#    global track_name
+#
+#    track_id = resp_json['item']['id']
+#    track_name = resp_json['item']['name']
+#    artists = [artist for artist in resp_json['item']['artists']]
+#
+#    link = resp_json['item']['external_urls']['spotify']
+#
+#    artists_names = ', '.join([artist['name'] for artist in artists])
+#
+#    global tpt
+#    global namept
+#    tpt = track_name
+#    namept = artists_names
+#
+#    current_track_info = {
+#        "id": track_id,
+#        "name": track_name,
+#        "artists": artists_names,
+#        "link": link
+#    }
 
 
+def breakwindow():
+    for widgets in root.winfo_children():
+        widgets.destroy()
 
 
+def get_lyrics(track: Track):
+    artists_names = ",".join(a for a in track.artists)
+    api_call = base_url + lyrics_matcher + format_url + artist_search_parameter + artists_names + track_search_parameter + track.name + api_key
+    request = requests.get(api_call)
+    data = request.json()
+    data = data['message']['body']
+    genius.excluded_terms = ["(Remix)", "(Live)"]
+    # Does not work, you should figure out why
+    # translated_names = (translator.translate(artists_names, dest="en")).text
+    song = genius.search_song(track.name, artists_names)
+    try:
+        lyrics = song.lyrics
+    except AttributeError:
+        lyrics = ""
+
+    # Should have
+    # return lyrics
+
+    # Should be in separate update_window(current_track) function called from main
+    root.title(F"PLAYING: {track.name}")
+    root.geometry("400x500")
+    root.configure(bg="#00ff08")
+    ratioL = (F"""
+{track.name}
+{track.artists}
+
+{lyrics}""")
+    lyricswindow = Label(root,text=ratioL,width=50,height=50, bg="#00ff08", font=("Arial",8))
+    lyricswindow.pack(expand=True,fill=BOTH)
+    root.wm_attributes("-topmost", 1)
+
+    # Replaced mainloop() because it was blocking the entire program
+    root.update()
+    if "normal" == root.state():
+        breakwindow()
+        song = genius.search_song(F"{track.name}", artists_names)
+        try:
+            lyrics = song.lyrics
+        except AttributeError:
+            lyrics = ""
+        ratioL = (F"""
+    {track.name}
+    {track.artists}
+
+    {lyrics}""")
+    root.title(F"PLAYING: {track.name}")
+    lyricswindow = Label(
+                    root,
+                    text=ratioL,
+                    width=50,
+                    height=50,
+                    bg="#00ff08",
+                    font=("Arial", 8)
+                )
+    lyricswindow.pack(expand=True, fill=BOTH)
+    # Replaced mainloop() because it was blocking the entire program
+    root.update()
 
 
 def main():
     current_track_id = None
     while True:
-        current_track_info = get_current_track(SPOTIFY_ACCESS_TOKEN)
-        #currentlyr = songname
-        if current_track_info['id'] != current_track_id:
-            #pprint (
-                #currentlyr,
-                #intdent=1
-            #)
-            pprint(
-                current_track_info,
-                indent=4
-            )
-            current_track_id = current_track_info['id']
-        time.sleep (1)
-        #while __name__ == '__main__':
-         #   lyric()
-        return current_track_info
+        time.sleep(1)
+        current_track = get_current_track()
 
-#https://www.tutorialspoint.com/how-to-bring-tkinter-window-in-front-of-other-windows
+        if current_track.song_id == current_track_id:
+            continue
 
-def breakwindow():
-    for widgets in root.winfo_children():
-      widgets.destroy()
-def lyric():
-    current_track_id = None
-    while True:
-        current_track_info = get_current_track(SPOTIFY_ACCESS_TOKEN)
-        if current_track_info['id'] != current_track_id:
-            artist_name = artists_names
-            track_name = tpt
-            api_call = base_url + lyrics_matcher + format_url + artist_search_parameter + artist_name + track_search_parameter + tpt + api_key
-            request = requests.get(api_call)
-            data = request.json()
-            data = data['message']['body']
-            #print (data['lyrics']['lyrics_body'] )
-            genius.excluded_terms = ["(Remix)", "(Live)"]
-            namept2 = translator.translate(namept,dest="en")
-            namept3 = namept2.text
-            print(namept)
-            print(namept2)
-            #namept2 = Translator().translate(F"{namept}",dest="en")
-            print ("this is the genius version that DOES give all the lyrics :)")
-            song = genius.search_song(F"{tpt}",namept3)
-            root.title(F"PLAYING: {tpt}")
-            root.geometry("400x500")
-            root.configure(bg="#00ff08")
-            ratioL = (F"""
-{tpt}
-{namept}
+        pprint(current_track, indent=4)
+        current_track_id = current_track.song_id
 
-{song.lyrics}""")
-            lyricswindow = Label(root,text=ratioL,width=50,height=50, bg="#00ff08",font=("Arial",8))
-            lyricswindow.pack(expand=True,fill=BOTH)
-            root.wm_attributes("-topmost",1)
-            root.mainloop()
-            if "normal" == root.state():
-                breakwindow()
-                song = genius.search_song(F"{tpt}",namept3)
-                ratioL = (F"""
-    {tpt}
-    {namept}
-
-    {song.lyrics}""")
-                root.title(F"PLAYING: {tpt}")
-                lyricswindow = Label(root,text=ratioL,width=50,height=50, bg="#00ff08",font=("Arial",8))
-                lyricswindow.pack(expand=True,fill=BOTH)
-                root.mainloop()
-        return
+        get_lyrics(current_track)
+        # current_track.lyrics = get_lyrics(current_track)
+        # update_window(current_track)
 
 
-#https://youtu.be/pVj45S5Ffvw?t=2887
-x=4
-#while x in range (999999):
-    #sleep(10)
-    #print ("1")
-    #main()
-    #lyric()
-while __name__ == "__main__"
-  main()
-  lyric()
-
-
-#while True():
-#    sleep(10)
-#    main()
-#    lyric()
+if __name__ == "__main__":
+    main()
